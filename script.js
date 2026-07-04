@@ -10,6 +10,10 @@ const escapeHTML = (value) => String(value)
 
 const escapeAttribute = escapeHTML;
 
+function setPageTitle(section = "") {
+  document.title = section ? `${data.name} ｜ ${section}` : data.name;
+}
+
 const placeholderStyle = (index) => {
   const palettes = [
     ["#f8f6f2", "#cdc4b5", "#fcfcfb"],
@@ -60,6 +64,7 @@ function clearPreview() {
 }
 
 function renderHome() {
+  setPageTitle();
   app.innerHTML = `
     ${header("projects")}
     <section class="home-layout" aria-label="Projects">
@@ -138,6 +143,14 @@ function clampImageIndex(project, imageNumber) {
   return Math.min(Math.max(requested, 0), imageCount - 1);
 }
 
+function projectImageCaption(project, imageNumber) {
+  const activeIndex = clampImageIndex(project, imageNumber);
+  return project.captions?.[activeIndex] || {
+    title: `Image ${activeIndex + 1}`,
+    description: project.description
+  };
+}
+
 function renderProjectGallery(project, imageNumber = null) {
   const activeIndex = clampImageIndex(project, imageNumber);
   const imageCount = project.images.length;
@@ -185,24 +198,59 @@ function renderProjectIndex(project) {
   `;
 }
 
+function enableIndexZoom() {
+  document.querySelectorAll(".index-item").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      item.classList.add("is-zooming");
+      window.setTimeout(() => {
+        window.location.hash = item.getAttribute("href");
+      }, 220);
+    });
+  });
+}
+
+function enableGalleryZoomOut(project) {
+  const page = document.querySelector(".project-page");
+  const stage = document.querySelector(".project-image-stage");
+  if (!page || !stage) return;
+
+  page.addEventListener("click", (event) => {
+    const blockedTarget = event.target.closest("a, .project-info, .project-image-stage, .project-gallery-single");
+    if (blockedTarget) return;
+    stage.classList.add("is-zooming-out");
+    window.setTimeout(() => {
+      window.location.hash = projectViewLink(project, "index");
+    }, 220);
+  });
+}
+
 function renderProject(slug, view = "gallery", imageNumber = null) {
   const project = data.projects.find((item) => item.slug === slug) || data.projects[0];
+  const caption = view === "gallery" ? projectImageCaption(project, imageNumber) : null;
+  setPageTitle(project.title);
   app.innerHTML = `
-    <article class="project-page photo-book-page">
+    <article class="project-page photo-book-page ${view === "gallery" ? "gallery-view" : "index-view"}">
       <a class="project-back" href="#home">&lt; Back</a>
       <div class="project-info">
-        <h1>${escapeHTML(project.title)}</h1>
-        <div class="project-year">${escapeHTML(project.year)}</div>
-        <div class="project-description">${escapeHTML(project.description)}</div>
+        ${view === "index" ? `<h1>${escapeHTML(project.title)}</h1>` : ""}
+        ${caption ? `
+          <div class="project-image-title">${escapeHTML(caption.title)}</div>
+          <div class="project-image-description">${escapeHTML(caption.description)}</div>
+        ` : `<div class="project-description">${escapeHTML(project.description)}</div>`}
         ${projectViewSwitch(project, view)}
       </div>
       ${view === "index" ? renderProjectIndex(project) : renderProjectGallery(project, imageNumber)}
     </article>
   `;
   applyProjectImageOrientation();
+  if (view === "index") enableIndexZoom();
+  if (view === "gallery") enableGalleryZoomOut(project);
 }
 
 function renderAbout() {
+  setPageTitle("About");
   app.innerHTML = `
     ${header("about")}
     <section class="text-page about-page">
@@ -210,8 +258,7 @@ function renderAbout() {
         ${imageMarkup(data.avatarImage, `${data.name} portrait`, 0, "avatar-placeholder")}
       </div>
       <div>
-        <div class="text-label">About</div>
-        <h1>Photographer / film creator / image maker</h1>
+        <h1>Film Photographer</h1>
         <div class="text-copy">
           ${data.bio.map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("")}
         </div>
@@ -221,16 +268,15 @@ function renderAbout() {
 }
 
 function renderBlog() {
+  setPageTitle("Blog");
   app.innerHTML = `
     ${header("blog")}
     <section class="text-page blog-page">
-      <div class="text-label">Blog</div>
       <div class="blog-list">
         ${data.blog.map((post) => `
           <article class="blog-item">
             <div class="blog-date">${escapeHTML(post.date)}</div>
             <h1><a href="#blog/${escapeAttribute(blogPostSlug(post))}">${escapeHTML(post.title)}</a></h1>
-            <p>${escapeHTML(post.summary)}</p>
           </article>
         `).join("")}
       </div>
@@ -240,6 +286,7 @@ function renderBlog() {
 
 function renderBlogPost(slug) {
   const post = data.blog.find((item) => blogPostSlug(item) === slug) || data.blog[0];
+  setPageTitle(post.title);
   app.innerHTML = `
     ${header("blog")}
     <article class="text-page blog-post-page">
@@ -256,21 +303,32 @@ function renderBlogPost(slug) {
   `;
 }
 
+const contactIcons = {
+  email: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z"/><path d="m3 6 9 7 9-7"/></svg>',
+  instagram: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1"/></svg>',
+  linkedin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h4v10H5zM7 5.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM11 9h4v1.5c.6-1 1.7-1.7 3-1.7 2.2 0 3.5 1.5 3.5 4.3V19h-4v-5.3c0-1.1-.4-1.7-1.2-1.7-.8 0-1.3.6-1.3 1.7V19h-4z"/></svg>'
+};
+
+function contactIcon(type) {
+  return `<span class="contact-icon">${contactIcons[type] || contactIcons.email}</span>`;
+}
+
 function contactLink(link) {
   if (!link.url || link.url === "#") {
-    return `<span class="contact-placeholder">${escapeHTML(link.label)}</span>`;
+    return `<span class="contact-row contact-placeholder">${contactIcon(link.type)}<span>${escapeHTML(link.label)}</span></span>`;
   }
-  return `<a href="${escapeAttribute(link.url)}">${escapeHTML(link.label)}</a>`;
+  return `<a class="contact-row" href="${escapeAttribute(link.url)}" target="_blank" rel="noopener noreferrer">${contactIcon(link.type)}<span>${escapeHTML(link.label)}</span></a>`;
 }
 
 function renderContact() {
+  setPageTitle("Contact");
   app.innerHTML = `
     ${header("contact")}
     <section class="text-page">
-      <div class="text-label">Contact</div>
-      <h1>Selected inquiries and collaborations</h1>
+      <div></div>
+      <h1>Links</h1>
       <div class="contact-list">
-        <a href="mailto:${escapeAttribute(data.contact.email)}">${escapeHTML(data.contact.email)}</a>
+        <a class="contact-row" href="mailto:${escapeAttribute(data.contact.email)}">${contactIcon("email")}<span>${escapeHTML(data.contact.email)}</span></a>
         ${data.contact.links.map(contactLink).join("")}
       </div>
     </section>
