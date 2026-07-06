@@ -9,9 +9,83 @@ const escapeHTML = (value) => String(value)
   .replaceAll("'", "&#39;");
 
 const escapeAttribute = escapeHTML;
+const languageStorageKey = "portfolioLanguage";
+
+function currentLanguage() {
+  try {
+    return window.localStorage?.getItem(languageStorageKey) === "zh" ? "zh" : "en";
+  } catch {
+    return "en";
+  }
+}
+
+function setStoredLanguage(language) {
+  try {
+    window.localStorage?.setItem(languageStorageKey, language);
+  } catch {
+    // Ignore storage failures; the current render still switches language.
+  }
+}
+
+function zhData() {
+  return data.translations?.zh || {};
+}
+
+function isChinese() {
+  return currentLanguage() === "zh";
+}
+
+function siteName() {
+  return isChinese() ? zhData().name || data.name : data.name;
+}
+
+function applyLanguageDocumentState() {
+  const language = currentLanguage();
+  if (document.documentElement) {
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+    document.documentElement.classList?.toggle("lang-zh", language === "zh");
+  }
+}
+
+function navText(key) {
+  return isChinese() ? zhData().nav?.[key] || key : {
+    projects: "Projects",
+    blog: "Blog",
+    about: "About",
+    contact: "Contact"
+  }[key];
+}
+
+function viewText(key) {
+  return isChinese() ? zhData().views?.[key] || key : {
+    gallery: "Gallery",
+    index: "Index",
+    back: "< Back"
+  }[key];
+}
+
+function projectText(project, key) {
+  if (!isChinese()) return project[key];
+  return zhData().projects?.[project.slug]?.[key] || project[key];
+}
+
+function localizedProjectCaption(project, index) {
+  if (!isChinese()) return project.captions?.[index];
+  return zhData().projects?.[project.slug]?.captions?.[index] || project.captions?.[index];
+}
+
+function localizedPost(post, key) {
+  if (!isChinese()) return post[key];
+  return zhData().blog?.posts?.[blogPostSlug(post)]?.[key] || post[key];
+}
+
+function localizedPostContent(post) {
+  if (!isChinese()) return post.content || [];
+  return zhData().blog?.posts?.[blogPostSlug(post)]?.content || post.content || [];
+}
 
 function setPageTitle(section = "") {
-  document.title = section ? `${data.name} ｜ ${section}` : data.name;
+  document.title = section ? `${siteName()} ｜ ${section}` : siteName();
 }
 
 const placeholderStyle = (index) => {
@@ -36,22 +110,26 @@ const imageMarkup = (src, alt, index, className = "image-placeholder") => {
 
 const header = (active) => `
   <header class="site-header">
-    <a class="site-name" href="#home">${escapeHTML(data.name)}</a>
-    <nav class="site-nav" aria-label="Primary">
-      <a class="${active === "projects" ? "active" : ""}" href="#home">Projects</a>
-      <a class="${active === "blog" ? "active" : ""}" href="#blog">Blog</a>
-      <a class="${active === "about" ? "active" : ""}" href="#about">About</a>
-      <a class="${active === "contact" ? "active" : ""}" href="#contact">Contact</a>
-    </nav>
+    <a class="site-name" href="#home">${escapeHTML(siteName())}</a>
+    <div class="site-actions">
+      <nav class="site-nav" aria-label="Primary">
+        <a class="${active === "projects" ? "active" : ""}" href="#home">${escapeHTML(navText("projects"))}</a>
+        <a class="${active === "blog" ? "active" : ""}" href="#blog">${escapeHTML(navText("blog"))}</a>
+        <a class="${active === "about" ? "active" : ""}" href="#about">${escapeHTML(navText("about"))}</a>
+        <a class="${active === "contact" ? "active" : ""}" href="#contact">${escapeHTML(navText("contact"))}</a>
+      </nav>
+      <button class="language-toggle" type="button" data-language-toggle>${isChinese() ? "EN" : "中文"}</button>
+    </div>
   </header>
 `;
 
 function setPreview(project, index) {
   const preview = document.querySelector(".preview-panel");
   if (!preview) return;
+  preview.className = `preview-panel preview-${project.slug}`;
   preview.innerHTML = `
     <div class="preview-image">
-      ${imageMarkup(project.coverImage, project.title, index)}
+      ${imageMarkup(project.coverImage, projectText(project, "title"), index)}
     </div>
   `;
   preview.classList.add("is-visible");
@@ -67,11 +145,11 @@ function renderHome() {
   setPageTitle();
   app.innerHTML = `
     ${header("projects")}
-    <section class="home-layout" aria-label="Projects">
+    <section class="home-layout" aria-label="${escapeAttribute(navText("projects"))}">
       <div class="project-list">
         ${data.projects.map((project, index) => `
           <a class="project-link" href="#project/${escapeAttribute(project.slug)}" data-project-index="${index}">
-            ${escapeHTML(project.title)}
+            ${escapeHTML(projectText(project, "title"))}
           </a>
         `).join("")}
       </div>
@@ -129,9 +207,9 @@ function projectViewLink(project, view, imageNumber = null) {
 function projectViewSwitch(project, activeView) {
   return `
     <div class="project-view-switch" aria-label="Project view">
-      <a class="${activeView === "gallery" ? "active" : ""}" href="${projectViewLink(project, "gallery")}">Gallery</a>
+      <a class="${activeView === "gallery" ? "active" : ""}" href="${projectViewLink(project, "gallery")}">${escapeHTML(viewText("gallery"))}</a>
       <span>/</span>
-      <a class="${activeView === "index" ? "active" : ""}" href="${projectViewLink(project, "index")}">Index</a>
+      <a class="${activeView === "index" ? "active" : ""}" href="${projectViewLink(project, "index")}">${escapeHTML(viewText("index"))}</a>
     </div>
   `;
 }
@@ -145,9 +223,9 @@ function clampImageIndex(project, imageNumber) {
 
 function projectImageCaption(project, imageNumber) {
   const activeIndex = clampImageIndex(project, imageNumber);
-  return project.captions?.[activeIndex] || {
+  return localizedProjectCaption(project, activeIndex) || {
     title: `Image ${activeIndex + 1}`,
-    description: project.description
+    description: projectText(project, "description")
   };
 }
 
@@ -161,7 +239,7 @@ function renderProjectGallery(project, imageNumber = null) {
   return `
     <div class="project-gallery-single">
       <figure id="image-${activeIndex + 1}" class="project-image-stage">
-        ${imageMarkup(src, `${project.title} image ${activeIndex + 1}`, activeIndex)}
+        ${imageMarkup(src, `${projectText(project, "title")} image ${activeIndex + 1}`, activeIndex)}
       </figure>
       <a class="gallery-hit-area previous" href="${projectViewLink(project, "gallery", previousImage)}" aria-label="Previous image"></a>
       <a class="gallery-hit-area next" href="${projectViewLink(project, "gallery", nextImage)}" aria-label="Next image"></a>
@@ -191,7 +269,7 @@ function renderProjectIndex(project) {
     <div class="project-index-grid">
       ${project.images.map((src, index) => `
         <a class="index-item" href="${projectViewLink(project, "gallery", index + 1)}">
-          ${imageMarkup(src, `${project.title} image ${index + 1}`, index, "index-placeholder")}
+          ${imageMarkup(src, `${projectText(project, "title")} image ${index + 1}`, index, "index-placeholder")}
         </a>
       `).join("")}
     </div>
@@ -229,16 +307,16 @@ function enableGalleryZoomOut(project) {
 function renderProject(slug, view = "gallery", imageNumber = null) {
   const project = data.projects.find((item) => item.slug === slug) || data.projects[0];
   const caption = view === "gallery" ? projectImageCaption(project, imageNumber) : null;
-  setPageTitle(project.title);
+  setPageTitle(projectText(project, "title"));
   app.innerHTML = `
     <article class="project-page photo-book-page ${view === "gallery" ? "gallery-view" : "index-view"}">
-      <a class="project-back" href="#home">&lt; Back</a>
+      <a class="project-back" href="#home">${escapeHTML(viewText("back"))}</a>
       <div class="project-info">
-        ${view === "index" ? `<h1>${escapeHTML(project.title)}</h1>` : ""}
+        ${view === "index" ? `<h1>${escapeHTML(projectText(project, "title"))}</h1>` : ""}
         ${caption ? `
           <div class="project-image-title">${escapeHTML(caption.title)}</div>
           <div class="project-image-description">${escapeHTML(caption.description)}</div>
-        ` : `<div class="project-description">${escapeHTML(project.description)}</div>`}
+        ` : `<div class="project-description">${escapeHTML(projectText(project, "description"))}</div>`}
         ${projectViewSwitch(project, view)}
       </div>
       ${view === "index" ? renderProjectIndex(project) : renderProjectGallery(project, imageNumber)}
@@ -250,7 +328,9 @@ function renderProject(slug, view = "gallery", imageNumber = null) {
 }
 
 function renderAbout() {
-  setPageTitle("About");
+  const aboutTitle = isChinese() ? zhData().about?.title || "关于" : "Film Photographer";
+  const aboutBio = isChinese() ? zhData().about?.bio || data.bio : data.bio;
+  setPageTitle(navText("about"));
   app.innerHTML = `
     ${header("about")}
     <section class="text-page about-page">
@@ -258,9 +338,9 @@ function renderAbout() {
         ${imageMarkup(data.avatarImage, `${data.name} portrait`, 0, "avatar-placeholder")}
       </div>
       <div>
-        <h1>Film Photographer</h1>
+        <h1>${escapeHTML(aboutTitle)}</h1>
         <div class="text-copy">
-          ${data.bio.map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("")}
+          ${aboutBio.map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("")}
         </div>
       </div>
     </section>
@@ -268,15 +348,15 @@ function renderAbout() {
 }
 
 function renderBlog() {
-  setPageTitle("Blog");
+  setPageTitle(navText("blog"));
   app.innerHTML = `
     ${header("blog")}
     <section class="text-page blog-page">
       <div class="blog-list">
         ${data.blog.map((post) => `
           <article class="blog-item">
-            <div class="blog-date">${escapeHTML(post.date)}</div>
-            <h1><a href="#blog/${escapeAttribute(blogPostSlug(post))}">${escapeHTML(post.title)}</a></h1>
+            <div class="blog-date">${escapeHTML(localizedPost(post, "date"))}</div>
+            <h1><a href="#blog/${escapeAttribute(blogPostSlug(post))}">${escapeHTML(localizedPost(post, "title"))}</a></h1>
           </article>
         `).join("")}
       </div>
@@ -286,17 +366,17 @@ function renderBlog() {
 
 function renderBlogPost(slug) {
   const post = data.blog.find((item) => blogPostSlug(item) === slug) || data.blog[0];
-  setPageTitle(post.title);
+  setPageTitle(localizedPost(post, "title"));
   app.innerHTML = `
     ${header("blog")}
     <article class="text-page blog-post-page">
-      <a class="text-label" href="#blog">&lt; Blog</a>
+      <a class="text-label" href="#blog">${escapeHTML(`${viewText("back").replace("返回", navText("blog")).replace("Back", navText("blog"))}`)}</a>
       <div class="blog-post">
-        <div class="blog-date">${escapeHTML(post.date)}</div>
-        <h1>${escapeHTML(post.title)}</h1>
-        <p class="blog-summary">${escapeHTML(post.summary)}</p>
+        <div class="blog-date">${escapeHTML(localizedPost(post, "date"))}</div>
+        <h1>${escapeHTML(localizedPost(post, "title"))}</h1>
+        <p class="blog-summary">${escapeHTML(localizedPost(post, "summary"))}</p>
         <div class="blog-content">
-          ${(post.content || []).map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("")}
+          ${localizedPostContent(post).map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("")}
         </div>
       </div>
     </article>
@@ -321,28 +401,47 @@ function contactLink(link) {
 }
 
 function renderContact() {
-  setPageTitle("Contact");
+  const contactTitle = isChinese() ? zhData().contact?.title || "链接" : "Links";
+  setPageTitle(navText("contact"));
   app.innerHTML = `
     ${header("contact")}
     <section class="text-page">
       <div></div>
-      <h1>Links</h1>
+      <h1>${escapeHTML(contactTitle)}</h1>
       <div class="contact-list">
         <a class="contact-row" href="mailto:${escapeAttribute(data.contact.email)}">${contactIcon("email")}<span>${escapeHTML(data.contact.email)}</span></a>
         ${data.contact.links.map(contactLink).join("")}
       </div>
     </section>
-  `;
+`;
+}
+
+function bindLanguageToggle() {
+  const toggle = document.querySelector("[data-language-toggle]");
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    setStoredLanguage(isChinese() ? "en" : "zh");
+    route();
+  });
 }
 
 function route() {
+  applyLanguageDocumentState();
   const hash = window.location.hash || "#home";
-  if (hash.startsWith("#project/")) return renderProject(projectSlugFromHash(hash), projectViewFromHash(hash), projectImageFromHash(hash));
-  if (hash === "#about") return renderAbout();
-  if (hash.startsWith("#blog/")) return renderBlogPost(blogSlugFromHash(hash));
-  if (hash === "#blog") return renderBlog();
-  if (hash === "#contact") return renderContact();
-  return renderHome();
+  if (hash.startsWith("#project/")) {
+    renderProject(projectSlugFromHash(hash), projectViewFromHash(hash), projectImageFromHash(hash));
+  } else if (hash === "#about") {
+    renderAbout();
+  } else if (hash.startsWith("#blog/")) {
+    renderBlogPost(blogSlugFromHash(hash));
+  } else if (hash === "#blog") {
+    renderBlog();
+  } else if (hash === "#contact") {
+    renderContact();
+  } else {
+    renderHome();
+  }
+  bindLanguageToggle();
 }
 
 window.addEventListener("hashchange", route);
